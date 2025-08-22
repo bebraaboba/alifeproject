@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>ALife — Top‑Down Observer (v5 • interesting defaults)</title>
+<style>
+  :root{--bg:#0b0d12;--fg:#e9edf7;--panel:#0f1220;--line:#20284d;--chip:#111633;--chipLine:#2a3472}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;overflow:hidden}
+  #wrap{position:fixed;inset:0;display:flex;flex-direction:column}
+  header{display:flex;align-items:center;gap:10px;padding:6px 10px;background:var(--panel);border-bottom:1px solid var(--line);user-select:none}
+  header .ttl{font-size:13px;color:#d7dcff;font-weight:600}
+  #stage{flex:1;position:relative}
+  #cv{position:absolute;inset:0;display:block;image-rendering:pixelated}
+  .bar{position:absolute;top:8px;right:8px;display:flex;gap:6px;z-index:5;align-items:center;flex-wrap:wrap}
+  .chip{border:1px solid var(--chipLine);background:var(--chip);color:#cfd8ff;border-radius:999px;padding:4px 8px;font-size:11px;opacity:.95}
+  .btn{border:1px solid #28306e;background:#1a2252;color:#e6ebff;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer}
+  .btn:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(18,28,88,.35)}
+  .mini{font-size:10px;padding:3px 6px}
+  .menu{position:absolute;top:36px;right:8px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;display:none;z-index:9;min-width:340px}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 0;flex-wrap:wrap}
+  label{font-size:12px;color:#cfd8ff}
+  input[type=range]{width:210px}
+  .sep{height:1px;background:#182044;margin:8px 0}
+  .banner{position:absolute;left:8px;top:8px;background:#2a0f0f;color:#ffd7d7;border:1px solid #5a1b1b;border-radius:8px;padding:6px 10px;font-size:12px;z-index:10;display:none;max-width:60ch}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <header>
+    <span class="ttl">ALife — Top‑Down Observer (v5)</span>
+    <span class="chip">интересные дефолты • колонии • виды по мутациям</span>
+  </header>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div class="banner" id="banner"></div>
+    <div class="bar" id="hud">
+      <span class="chip" id="chFPS">fps: --</span>
+      <span class="chip" id="chTick">t: 0</span>
+      <span class="chip" id="chPop">pop: --</span>
+      <span class="chip" id="chSpecies">species: --</span>
+      <span class="chip" id="chSun">sun: --</span>
+      <button class="btn mini" id="btnPlay" title="Пауза/Старт">▶</button>
+      <button class="btn mini" id="btnReset" title="Сброс">↺</button>
+      <button class="btn mini" id="btnSeed" title="Пересев">✱</button>
+      <button class="btn mini" id="btnPreset" title="Preset: Interesting">★</button>
+      <button class="btn mini" id="btnMenu" title="Параметры">⚙</button>
+    </div>
+    <div class="menu" id="menu">
+      <div class="row"><label>Авто‑масштаб</label><input id="cbAuto" type="checkbox" checked/></div>
+      <div class="row"><label>Пиксель (если авто off)</label><input id="slPix" type="range" min="2" max="16" step="1" value="5"/></div>
+      <div class="row"><label>Длина дня (сек)</label><input id="slDay" type="range" min="30" max="480" step="10" value="180"/></div>
+      <div class="row"><label>PS reward</label><input id="slPS" type="range" min="2" max="40" step="1" value="16"/></div>
+      <div class="row"><label>Plant rate</label><input id="slPlantRate" type="range" min="0" max="250" step="5" value="80"/></div>
+      <div class="row"><label>Min plant to eat</label><input id="slEatTh" type="range" min="0" max="40" step="1" value="12"/></div>
+      <div class="row"><label>Порог размнож.</label><input id="slRepro" type="range" min="80" max="320" step="5" value="185"/></div>
+      <div class="row"><label>σ мутаций</label><input id="slMut" type="range" min="0.02" max="1.1" step="0.01" value="0.26"/></div>
+      <div class="row"><label>Speciation Δ</label><input id="slSpec" type="range" min="0.2" max="3.0" step="0.1" value="1.1"/></div>
+      <div class="row"><label>Speciation chance</label><input id="slSpecP" type="range" min="0" max="0.6" step="0.01" value="0.12"/></div>
+      <div class="row"><label>Сексуальное размножение</label><input id="cbSex" type="checkbox"/></div>
+      <div class="sep"></div>
+      <div class="row"><label>Separation (анти‑толпа)</label><input id="slSep" type="range" min="0" max="2.5" step="0.05" value="1.2"/></div>
+      <div class="row"><label>Adhesion base</label><input id="slAdh" type="range" min="0" max="0.25" step="0.005" value="0.12"/></div>
+      <div class="row"><label>Skip (тиков/кадр)</label><input id="slSkip" type="range" min="0" max="10" step="1" value="0"/></div>
+      <div class="row"><label>Замедление (кадров/шаг)</label><input id="slSlow" type="range" min="1" max="6" step="1" value="2"/></div>
+      <div class="row"><label>Макс. ботов</label><input id="slMax" type="range" min="500" max="24000" step="500" value="7000"/></div>
+      <div class="row"><label>Размер сетки</label><span id="lblGrid">—</span></div>
+      <div class="row small"><a href="#" id="lnkHelp">help</a></div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+// ========================= Utils =========================
+const clamp=(v,a,b)=>v<a?a:(v>b?b:v);
+const rnd=(a=1,b=null)=>{if(b===null){b=a;a=0;}return a+Math.random()*(b-a)};
+const rndn=(mu=0,s=1)=>{let u=1-Math.random(),v=1-Math.random();return mu+Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)*s};
+const sigmoid=x=>1/(1+Math.exp(-x));
+const byId=id=>document.getElementById(id);
+
+// ========================= Error banner =========================
+const banner=byId('banner');
+window.addEventListener('error', (e)=>{ banner.style.display='block'; banner.textContent='JS error: '+(e.message||e.toString()); });
+
+// ========================= Canvas & UI =========================
+const cv=byId('cv'); const cx=cv.getContext('2d'); cx.imageSmoothingEnabled=false;
+const HUD={fps:byId('chFPS'),tick:byId('chTick'),pop:byId('chPop'),species:byId('chSpecies'),sun:byId('chSun')};
+const BTN={play:byId('btnPlay'),reset:byId('btnReset'),seed:byId('btnSeed'),preset:byId('btnPreset'),menu:byId('btnMenu')};
+const MENU=byId('menu'); const stage=document.getElementById('stage');
+let PIX=5, AUTO=true;
+
+// Grid
+const GRID={W:240,H:160}; const AREA=GRID.W*GRID.H;
+
+// Auto pixel with double-RAF layout settle
+function computeAutoPix(){ const sX=Math.floor(stage.clientWidth/GRID.W); const sY=Math.floor(stage.clientHeight/GRID.H); return Math.max(2, Math.min(16, Math.min(sX,sY))); }
+function fitCanvas(){ AUTO=byId('cbAuto').checked; PIX=AUTO?computeAutoPix(): (parseInt(byId('slPix').value)||5); cv.width=stage.clientWidth; cv.height=stage.clientHeight; byId('lblGrid').textContent=`${GRID.W}×${GRID.H} (pix ${PIX}${AUTO?' auto':''})`; }
+window.addEventListener('resize', ()=>{ fitCanvas(); draw(); }, {passive:true});
+BTN.menu.addEventListener('click',()=>{ MENU.style.display=(MENU.style.display==='block')?'none':'block'; });
+document.addEventListener('click',(e)=>{ if(!MENU.contains(e.target) && e.target!==BTN.menu) MENU.style.display='none'; });
+byId('lnkHelp').addEventListener('click',(e)=>{ e.preventDefault(); alert('Preset «Interesting»: Adhesion 0.12, Separation 1.2, eat≥12, σ≈0.26, Speciation Δ≈1.1, P≈0.12.\\nКолонии стабилизируются, затем мутация порождает новый вид → столкновения.'); });
+byId('cbAuto').addEventListener('change', ()=>{ fitCanvas(); draw(); });
+byId('slPix').addEventListener('input', ()=>{ if(!AUTO){ fitCanvas(); draw(); } });
+
+// ========================= World & Params (interesting defaults) =========================
+let running=true, tick=0, frames=0, lastFPS=performance.now(), fps=0;
+let dayLenSec=180, psReward=16, plantRate=80, eatThreshold=12, reproThreshold=185, mutSigma=0.26, sexual=false, skipTicks=0, slowFrames=2, maxBots=7000;
+let sepStrength=1.2, adhBase=0.12;
+byId('slDay').addEventListener('input',()=>dayLenSec=parseInt(byId('slDay').value)||180);
+byId('slPS').addEventListener('input',()=>psReward=parseInt(byId('slPS').value)||16);
+byId('slPlantRate').addEventListener('input',()=>plantRate=parseInt(byId('slPlantRate').value)||80);
+byId('slEatTh').addEventListener('input',()=>eatThreshold=parseInt(byId('slEatTh').value)||12);
+byId('slRepro').addEventListener('input',()=>reproThreshold=parseInt(byId('slRepro').value)||185);
+byId('slMut').addEventListener('input',()=>mutSigma=parseFloat(byId('slMut').value)||0.26);
+byId('cbSex').addEventListener('change',()=>sexual=byId('cbSex').checked);
+byId('slSkip').addEventListener('input',()=>skipTicks=parseInt(byId('slSkip').value)||0);
+byId('slSlow').addEventListener('input',()=>slowFrames=parseInt(byId('slSlow').value)||2);
+byId('slMax').addEventListener('input',()=>maxBots=parseInt(byId('slMax').value)||7000);
+byId('slSep').addEventListener('input',()=>sepStrength=parseFloat(byId('slSep').value)||1.2);
+byId('slAdh').addEventListener('input',()=>adhBase=parseFloat(byId('slAdh').value)||0.12);
+
+// ========================= Environment =========================
+const Env={ t:0, step(dt){ this.t=(this.t+dt/dayLenSec)%1; }, sun(){ return Math.max(0, Math.cos(this.t*2*Math.PI)); } };
+const PLANT=new Float32Array(AREA);
+const ORG  =new Float32Array(AREA);
+const OCC  =new Int32Array(AREA); OCC.fill(-1);
+const DENS =new Float32Array(AREA);
+const IDX=(x,y)=>y*GRID.W+x;
+const wrapX=(x)=>{const W=GRID.W; return (x%W+W)%W;};
+const wrapY=(y)=>{const H=GRID.H; return (y%H+H)%H;};
+
+function seedPlants(){
+  PLANT.fill(0);
+  for(let k=0;k<280;k++){
+    const cx=(Math.random()*GRID.W)|0, cy=(Math.random()*GRID.H)|0;
+    const r=5+((Math.random()*18)|0), peak=80+Math.random()*130;
+    for(let y=-r;y<=r;y++) for(let x=-r;x<=r;x++){
+      const nx=wrapX(cx+x), ny=wrapY(cy+y), d=x*x+y*y;
+      if(d<=r*r){ const w=1-d/(r*r); PLANT[IDX(nx,ny)] += peak*w; }
+    }
+  }
+  for(let i=0;i<AREA;i++){ if(PLANT[i]>270) PLANT[i]=270; }
+}
+function plantsStep(dt){
+  const cap=270, grow=plantRate/60;
+  for(let i=0;i<AREA;i++){
+    const fert=ORG[i]*0.02;
+    const p=PLANT[i], inc=(grow+fert)*p*(1-p/cap)*dt;
+    PLANT[i]=clamp(p+inc,0,cap);
+    ORG[i]*=0.9994;
+  }
+}
+function recomputeDensity(){
+  for(let y=0;y<GRID.H;y++){
+    const ym1=wrapY(y-1), yp1=wrapY(y+1);
+    const base=y*GRID.W, rowm1=ym1*GRID.W, rowp1=yp1*GRID.W;
+    for(let x=0;x<GRID.W;x++){
+      const xm1=wrapX(x-1), xp1=wrapX(x+1);
+      let s=0;
+      const i00=rowm1+xm1, i01=rowm1+x, i02=rowm1+xp1;
+      const i10=base +xm1, i11=base +x, i12=base +xp1;
+      const i20=rowp1+xm1, i21=rowp1+x, i22=rowp1+xp1;
+      s += (OCC[i00]>=0); s += (OCC[i01]>=0); s += (OCC[i02]>=0);
+      s += (OCC[i10]>=0); s += (OCC[i11]>=0); s += (OCC[i12]>=0);
+      s += (OCC[i20]>=0); s += (OCC[i21]>=0); s += (OCC[i22]>=0);
+      DENS[base+x]=s;
+    }
+  }
+}
+
+// ========================= Species =========================
+let speciesCount=0;
+const speciesHue=[]; const speciesAlive=new Uint32Array(65535);
+function newSpecies(){ const id=++speciesCount; const hue=(id*137)%360; speciesHue[id]=hue; speciesAlive[id]=0; return id; }
+function speciesColor(id){ const h=(speciesHue[id]||0)|0; return `hsl(${h},90%,60%)`; }
+
+// ========================= Bots =========================
+const MAX=24000;
+const bx=new Uint16Array(MAX), by=new Uint16Array(MAX);
+const DIR=new Uint8Array(MAX);
+const E =new Float32Array(MAX);
+const G =new Float32Array(MAX*6);
+const TP=new Uint8Array(MAX);
+const SP=new Uint16Array(MAX);
+const AL=new Uint8Array(MAX);
+let N=0, aliveN=0;
+const freeStack=new Int32Array(MAX); let freeTop=0;
+const gene=(i,k)=>G[i*6+k]; const setGene=(i,k,v)=>{G[i*6+k]=v;};
+function alloc(){ if(N<MAX && freeTop===0) return N++; if(freeTop>0) return freeStack[--freeTop]; return -1; }
+function freeIdx(i){ AL[i]=0; if(freeTop<MAX) freeStack[freeTop++]=i; }
+function classify(i){ const p=sigmoid(gene(i,0)), h=sigmoid(gene(i,1)), a=sigmoid(gene(i,2)); TP[i]=(a>0.62)?2:((h>=p)?1:0); }
+function randomGenome(i){ for(let k=0;k<6;k++) setGene(i,k,rndn(0,1)); }
+function mutateCopy(src,dst){
+  for(let k=0;k<6;k++) setGene(dst,k,G[src*6+k]);
+  if(Math.random()<0.25){ const k=(Math.random()*6)|0; setGene(dst,k, gene(dst,k)+rndn(0,mutSigma)); }
+  else { const k=(Math.random()*6)|0; setGene(dst,k, gene(dst,k)+rndn(0,mutSigma*0.25)); }
+  if(Math.random()<0.05){ const k=(Math.random()*6)|0; setGene(dst,k, gene(dst,k)+rndn(0, mutSigma*2.0)); }
+}
+function genomeDistance(i,j){ let s=0; for(let k=0;k<6;k++){ const d=gene(i,k)-gene(j,k); s+=d*d; } return Math.sqrt(s); }
+const DX=[-1,0,1,-1,1,-1,0,1], DY=[-1,-1,-1,0,0,1,1,1];
+function neighbors(x,y){
+  return [[wrapX(x-1),wrapY(y-1)],[x,wrapY(y-1)],[wrapX(x+1),wrapY(y-1)],[wrapX(x-1),y],[wrapX(x+1),y],[wrapX(x-1),wrapY(y+1)],[x,wrapY(y+1)],[wrapX(x+1),wrapY(y+1)]];
+}
+let speciationDelta=1.1, speciationChance=0.12;
+function spawn(x,y, seed=null, speciesId=0){
+  if(aliveN>=maxBots) return -1;
+  const i=alloc(); if(i<0) return -1;
+  bx[i]=wrapX(x); by[i]=wrapY(y); DIR[i]=(Math.random()*8)|0; E[i]=85+rnd(30); AL[i]=1;
+  if(seed){ for(let k=0;k<6;k++) setGene(i,k, seed[k]); } else randomGenome(i);
+  classify(i);
+  if(!speciesId) speciesId=newSpecies();
+  SP[i]=speciesId; speciesAlive[speciesId]++;
+  const c=IDX(bx[i],by[i]);
+  if(OCC[c]===-1){ OCC[c]=i; aliveN++; return i; }
+  const dirs=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]];
+  for(let r=1;r<=2;r++){ for(const [dx,dy] of dirs){ const nx=wrapX(bx[i]+dx*r), ny=wrapY(by[i]+dy*r), ci=IDX(nx,ny); if(OCC[ci]===-1){ bx[i]=nx; by[i]=ny; OCC[ci]=i; aliveN++; return i; } } }
+  AL[i]=0; freeIdx(i); speciesAlive[speciesId]--; return -1;
+}
+function kill(i){
+  const ci=IDX(bx[i],by[i]);
+  if(OCC[ci]===i) OCC[ci]=-1;
+  ORG[ci]+= Math.max(0, E[i]+25);
+  speciesAlive[SP[i]] = Math.max(0, speciesAlive[SP[i]]-1);
+  AL[i]=0; freeIdx(i); aliveN--;
+}
+byId('slSpec').addEventListener('input',()=>{ speciationDelta=parseFloat(byId('slSpec').value)||1.1; });
+byId('slSpecP').addEventListener('input',()=>{ speciationChance=parseFloat(byId('slSpecP').value)||0.12; });
+
+function countSameNeighbors(i){
+  const x=bx[i], y=by[i], sp=SP[i];
+  let c=0; const ns=neighbors(x,y);
+  for(let k=0;k<8;k++){ const [nx,ny]=ns[k]; const j=OCC[IDX(nx,ny)]; if(j>=0 && AL[j] && SP[j]===sp) c++; }
+  return c;
+}
+
+function stepBot(i){
+  if(!AL[i]) return;
+  const x=bx[i], y=by[i], idx=IDX(x,y);
+  const p=sigmoid(gene(i,0)), h=sigmoid(gene(i,1)), a=sigmoid(gene(i,2)), roam=sigmoid(gene(i,3)), sizeg=sigmoid(gene(i,4)), adh=sigmoid(gene(i,5));
+  const sun=Env.sun();
+
+  // energy flows
+  E[i]+= psReward * p * sun * 0.9;
+  if(PLANT[idx] > eatThreshold && h>0.1){
+    const localD = DENS[idx]/9;
+    const densityLimiter = 1/(1 + sepStrength*localD);
+    const predPenalty = (TP[i]===2)?0.35:1.0;
+    const eat = Math.min(PLANT[idx], (8*h) * densityLimiter);
+    PLANT[idx]-=eat; E[i]+=eat*0.9*predPenalty;
+  }
+  // costs + colony synergy
+  let base = (1.8 + 0.6*roam + 0.35*sizeg + 0.35*a);
+  const sameC = countSameNeighbors(i);
+  const synergy = Math.max(0, 1 - (adhBase + 0.1*adh) * sameC);
+  base *= clamp(synergy, 0.6, 1.0);
+  E[i] -= base;
+
+  // movement with inertia
+  let dir = DIR[i];
+  const cand = [dir, (dir+7)&7, (dir+1)&7];
+  let best=-1e9, bestDir=dir, bestOcc=-1, bestIdx=idx;
+  for(let ci=0; ci<cand.length; ci++){
+    const d=cand[ci];
+    const nx=wrapX(x+DX[d]), ny=wrapY(y+DY[d]), ti=IDX(nx,ny);
+    const occ=OCC[ti];
+    const plantU = h*PLANT[ti]*0.02;
+    const emptyU = p*(occ<0? 0.05 : -0.25);
+    const attackU= (occ>=0)? ((a>0.6)? 0.5 : -0.8) : 0;
+    const dens = DENS[ti]/9;
+    const sepU  = - sepStrength * dens;
+    const adhU  = (sameC>=2? (adhBase+0.1*adh)*0.2 : 0);
+    const turnPenalty = (ci===0)?0:0.03;
+    const u = plantU + emptyU + attackU + sepU + adhU - turnPenalty + (Math.random()*0.01);
+    if(u>best){ best=u; bestDir=d; bestOcc=occ; bestIdx=ti; }
+  }
+  const moveChance = 0.45 + 0.25*roam;
+  if(Math.random()<moveChance){
+    if(bestOcc>=0){
+      if(Math.random()<a){
+        const j=bestOcc; if(AL[j]){
+          const dmg = 14*a; E[j]-=dmg; E[i]+=dmg*0.45; E[i]-=1.8;
+          if(E[j]<=0){ kill(j); OCC[IDX(x,y)]=-1; OCC[bestIdx]=i; bx[i]=wrapX(x+DX[bestDir]); by[i]=wrapY(y+DY[bestDir]); DIR[i]=bestDir; }
+        }
+      }
+    }else if(bestIdx!==idx){
+      OCC[idx]=-1; OCC[bestIdx]=i; bx[i]=wrapX(x+DX[bestDir]); by[i]=wrapY(y+DY[bestDir]); DIR[i]=bestDir;
+    }
+  }
+
+  // reproduction + speciation
+  if(E[i]>=reproThreshold && aliveN<maxBots){
+    const neigh=neighbors(bx[i],by[i]); const free=[];
+    for(const [nx,ny] of neigh){ if(OCC[IDX(nx,ny)]===-1) free.push([nx,ny]); }
+    if(free.length>0){
+      const [nx,ny]=free[(Math.random()*free.length)|0];
+      const child=alloc();
+      if(child>=0){
+        bx[child]=nx; by[child]=ny; DIR[child]=(Math.random()*8)|0; E[child]=80+rnd(25); AL[child]=1;
+        if(sexual){
+          let mate=-1,bd=1e9;
+          for(let k=0;k<N;k++){ if(!AL[k]||k===i) continue; if(SP[k]!==SP[i] && TP[k]!==TP[i]) continue;
+            const dx=Math.abs(bx[k]-bx[i]); const rx=Math.min(dx, GRID.W-dx);
+            const dy=Math.abs(by[k]-by[i]); const ry=Math.min(dy, GRID.H-dy);
+            const d2=rx*rx+ry*ry; if(d2<bd){bd=d2; mate=k;} }
+          for(let g=0; g<6; g++) setGene(child,g, (mate>=0 && Math.random()<0.5)? gene(mate,g):gene(i,g));
+          if(Math.random()<0.25){ const k=(Math.random()*6)|0; setGene(child,k, gene(child,k)+rndn(0, mutSigma)); }
+          else { const k=(Math.random()*6)|0; setGene(child,k, gene(child,k)+rndn(0, mutSigma*0.25)); }
+          if(Math.random()<0.05){ const k=(Math.random()*6)|0; setGene(child,k, gene(child,k)+rndn(0, mutSigma*2.0)); }
+        }else{
+          mutateCopy(i, child);
+        }
+        classify(child);
+        let sid = SP[i];
+        const dist = genomeDistance(i, child);
+        if(dist>speciationDelta || Math.random()<speciationChance){ sid=newSpecies(); }
+        SP[child]=sid; speciesAlive[sid]++;
+        OCC[IDX(nx,ny)]=child; aliveN++; E[i]*=0.5;
+      }
+    }else if(Math.random()<0.6){ kill(i); }
+  }
+  if(E[i]<=0){ kill(i); }
+}
+
+// ========================= Rendering =========================
+function draw(){
+  const Wpx=GRID.W*PIX, Hpx=GRID.H*PIX;
+  const offx=((cv.width - Wpx)>>1), offy=((cv.height - Hpx)>>1);
+  // Checkerboard base (не просто чёрный фон)
+  const cs=PIX; const bg1='#0a1016', bg2='#0b111a';
+  cx.clearRect(0,0,cv.width,cv.height);
+  for(let y=0;y<GRID.H;y++){
+    const yy=offy+y*PIX; const oddy=y&1;
+    for(let x=0;x<GRID.W;x++){
+      const xx=offx+x*PIX; const odd=(oddy^(x&1));
+      cx.fillStyle = odd?bg1:bg2; cx.fillRect(xx,yy,PIX,PIX);
+    }
+  }
+  // Plants
+  for(let y=0;y<GRID.H;y++){
+    const row=y*GRID.W, yy=offy+y*PIX;
+    for(let x=0;x<GRID.W;x++){
+      const i=row+x, p=PLANT[i]; if(p<=1) continue;
+      const l=Math.min(56, 8 + p*0.20); cx.fillStyle=`hsl(120,60%,${l}%)`;
+      cx.fillRect(offx + x*PIX, yy, PIX, PIX);
+    }
+  }
+  // Bots
+  for(let i=0;i<N;i++){ if(!AL[i]) continue;
+    cx.fillStyle=speciesColor(SP[i]);
+    cx.fillRect(offx + bx[i]*PIX, offy + by[i]*PIX, PIX, PIX);
+  }
+}
+
+// ========================= Loop & Controls =========================
+function stepEnv(){ const dt=1/60; Env.step(dt); plantsStep(dt); recomputeDensity(); }
+function stepSim(){
+  stepEnv();
+  for(let i=0;i<N;i++) if(AL[i]) stepBot(i);
+  if(aliveN===0) seed(true);
+}
+let frameCount=0;
+function loop(){
+  if(running){
+    if((frameCount % slowFrames)===0){
+      const k=skipTicks|0; for(let s=0;s<k; s++) stepSim(); stepSim();
+    }
+  }
+  draw();
+  frames++; frameCount++;
+  const now=performance.now();
+  if(now-lastFPS>1000){
+    fps=Math.round(frames*1000/(now-lastFPS)); frames=0; lastFPS=now;
+    HUD.fps.textContent=`fps: ${fps}`; HUD.sun.textContent=`sun: ${Env.sun().toFixed(2)}`; HUD.tick.textContent=`t: ${tick}`; HUD.pop.textContent=`pop: ${aliveN}`;
+    let sp=0; for(let s=1;s<=speciesCount;s++){ if(speciesAlive[s]>0) sp++; } HUD.species.textContent=`species: ${sp}`;
+  }
+  tick++;
+  requestAnimationFrame(loop);
+}
+
+// Buttons
+BTN.play.addEventListener('click',()=>{ running=!running; BTN.play.textContent=running?'❚❚':'▶'; });
+BTN.reset.addEventListener('click',()=>{ resetWorld(); });
+BTN.seed.addEventListener('click',()=>{ seed(true); });
+BTN.preset.addEventListener('click',()=>{ // re-apply interesting defaults and reseed
+  byId('slAdh').value=adhBase=0.12;
+  byId('slSep').value=sepStrength=1.2;
+  byId('slEatTh').value=eatThreshold=12;
+  byId('slMut').value=mutSigma=0.26;
+  byId('slSpecP').value=speciationChance=0.12;
+  byId('slSpec').value=speciationDelta=1.1;
+  byId('slPS').value=psReward=16;
+  byId('slPlantRate').value=plantRate=80;
+  byId('slSlow').value=slowFrames=2;
+  byId('slSkip').value=skipTicks=0;
+  seed(true);
+});
+
+// ========================= Seed / Reset with robust first draw =========================
+function seed(clear=false){
+  if(clear){
+    OCC.fill(-1); PLANT.fill(0); ORG.fill(0); DENS.fill(0);
+    for(let i=0;i<N;i++){ if(AL[i]) speciesAlive[SP[i]] = Math.max(0, speciesAlive[SP[i]]-1); AL[i]=0; }
+    freeTop=0; N=0; aliveN=0; speciesCount=0;
+    seedPlants(); recomputeDensity();
+  }
+  const sP=newSpecies(), sG=newSpecies(), sH=newSpecies();
+  const Np=340, Ng=340, Nh=200;
+  for(let i=0;i<Np;i++){ const g=[rndn(2.3,0.5), rndn(0.3,0.5), rndn(-1.1,0.5), rndn(0,1), rndn(0,1), rndn(1.2,0.8)]; spawn((Math.random()*GRID.W)|0, (Math.random()*GRID.H)|0, g, sP); }
+  for(let i=0;i<Ng;i++){ const g=[rndn(0.4,0.5), rndn(2.0,0.5), rndn(0.1,0.6), rndn(0,1), rndn(0,1), rndn(0.8,0.8)]; spawn((Math.random()*GRID.W)|0, (Math.random()*GRID.H)|0, g, sG); }
+  for(let i=0;i<Nh;i++){ const g=[rndn(-1.2,0.6), rndn(0.9,0.6), rndn(2.2,0.6), rndn(0,1), rndn(0,1), rndn(0.6,0.8)]; spawn((Math.random()*GRID.W)|0, (Math.random()*GRID.H)|0, g, sH); }
+  recomputeDensity(); draw(); // immediate visible frame
+}
+
+function resetWorld(){ tick=0; Env.t=0; seed(true); }
+
+// Boot — double RAF to avoid layout 0×0
+function boot(){
+  fitCanvas();
+  requestAnimationFrame(()=>{ fitCanvas(); seed(true); draw(); requestAnimationFrame(loop); });
+}
+boot();
+</script>
+</body>
+</html>
